@@ -1,0 +1,16 @@
+build/
+install/
+log/
+
+
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+.DS_Store
+Thumbs.db
