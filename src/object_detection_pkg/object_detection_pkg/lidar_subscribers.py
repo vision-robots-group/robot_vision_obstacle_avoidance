@@ -1,3 +1,5 @@
+import math
+
 import rclpy
 from rclpy.node import Node
 
@@ -13,10 +15,24 @@ class LidarSubscriber(Node):
             '/scan',
             self.listener_callback,
             10)
-        self.subscription  # prevent unused variable warning
+        self.subscription
+        self.scan = None
 
     def listener_callback(self, msg):
-        self.get_logger().info(f'Lidar data received: {msg.ranges}')
+        self.scan = msg
+
+    def read(self):
+        """Valid (finite, in-range) ranges, or None if no scan yet."""
+        return [r for r, _ in self._valid()] if self.scan else None
+
+    def get_angles(self):
+        return [a for _, a in self._valid()] if self.scan else None
+
+    def _valid(self):
+        s = self.scan
+        for i, r in enumerate(s.ranges):
+            if math.isfinite(r) and s.range_min <= r <= s.range_max:
+                yield r, s.angle_min + i * s.angle_increment
 
 
 def main(args=None):
@@ -26,9 +42,6 @@ def main(args=None):
 
     rclpy.spin(lidar_sub)
 
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
     lidar_sub.destroy_node()
     rclpy.shutdown()
 
