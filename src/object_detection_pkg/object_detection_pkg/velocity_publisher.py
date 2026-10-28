@@ -23,6 +23,11 @@ class VelocityPublisher(Node):
         self.get_logger().info(f'Publishing: {msg} velocity')
         self.i += 1
 
+    def apply(self, command):
+        linear_velocity, angular_velocity = command
+        self.linear_velocity = Vector3(x=linear_velocity, y=0.0, z=0.0)
+        self.angular_velocity = Vector3(x=0.0, y=0.0, z=angular_velocity)
+
 
 def main(args=None):
     rclpy.init(args=args)
