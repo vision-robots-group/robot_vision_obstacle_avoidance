@@ -24,8 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'lidar_subscriber = object_detection_pkg.lidar_subscriber:main',
-            'velocity_publisher = object_detection_pkg.velocity_pubblisher:main',
+            'controller = object_detection_pkg.controller:main'
         ],
     },
 )
