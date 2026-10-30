@@ -23,8 +23,9 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts': [
-            'controller = object_detection_pkg.controller:main'
-        ],
+    'console_scripts': [
+        'controller = object_detection_pkg.controller:main',
+        'depth_controller = object_detection_pkg.controller:main_depth'
+    ],
     },
 )
