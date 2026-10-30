@@ -20,7 +20,7 @@ class VelocityPublisher(Node):
         msg.linear = self.linear_velocity
         msg.angular = self.angular_velocity
         self.publisher_.publish(msg)
-        self.get_logger().info(f'Publishing: {msg} velocity')
+        # self.get_logger().info(f'Publishing: {msg} velocity')
         self.i += 1
 
     def apply(self, command):

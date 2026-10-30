@@ -14,16 +14,29 @@ class Controller(Node):
     def __init__(self, sensors, actuators, safe_distance=1.0, fov=math.radians(30)):
         super().__init__('controller')
         self.sensors = sensors
+        self.stop_reason = None
         self.actuators = actuators
-        self.safe_distance = safe_distance
-        self.fov = fov
-        self.forward_speed = 0.2
-        self.turn_speed = 0.5
+        self.safe_distance = self.positive_param('safe_distance', safe_distance)
+        # half-width of the front window, given in degrees
+        self.fov = math.radians(self.positive_param('fov_deg', math.degrees(fov)))
+        self.forward_speed = self.positive_param('forward_speed', 0.2)
+        self.turn_speed = self.positive_param('turn_speed', 0.5)
+        self.escape_turn = None
+        # side choice: 'space' (mean distance of side bins) or 'clearance' (closest side bin)
+        self.turn_choice = self.declare_parameter('turn_choice', 'space').value
+        if self.turn_choice not in ('space', 'clearance'):
+            raise ValueError(f"turn_choice must be 'space' or 'clearance', got '{self.turn_choice}'")
         self.timer = self.create_timer(0.1, self.step)
+
+    def positive_param(self, name, default):
+        value = float(self.declare_parameter(name, float(default)).value)
+        if value <= 0: raise ValueError(f'{name} must be positive, got {value}')
+        return value
 
     def compute_command(self, distances, angles):
         if distances is None or angles is None:
-            return 0.0, 0.0
+            status = getattr(self.sensors, 'status', 'unknown')
+            return self.stop(f'no sensor data ({status})')
 
         # norm angles to [-pi, pi]
         all_bins = [(d, math.atan2(math.sin(a), math.cos(a))) for d,a in zip(distances, angles)]
@@ -36,12 +49,14 @@ class Controller(Node):
 
         # stop robot if there is insufficient forward information
         if not front_bins or len(front) < 0.7 * len(front_bins): 
-            return 0.0, 0.0
+            return self.stop(f'insufficient front data ({len(front)}/{len(front_bins)} bins)')
 
         blocked = [(d, a) for d, a in front if d < self.safe_distance]  
 
         # No obstacle: continue forward
         if not blocked:
+            self.stop_reason = None
+            self.escape_turn = None
             return self.forward_speed, 0.0
 
         # Obstacle: compare left and right clearances
@@ -55,12 +70,24 @@ class Controller(Node):
         left_clearance = min(left) if left else 0.0
         right_clearance = min(right) if right else 0.0
 
-        # No sufficiently clear turning direction
-        if max(left_clearance, right_clearance) < self.safe_distance:
-            return 0.0, 0.0
+        # turn toward the side with more space (mean distance of its bins)
+        left_space = sum(left) / len(left) if left else 0.0
+        right_space = sum(right) / len(right) if right else 0.0
+
+        if self.turn_choice == 'clearance':
+            left_score, right_score = left_clearance, right_clearance
+        else:
+            left_score, right_score = left_space, right_space
+
+        # rotate in place when blocked
+        if max(left_clearance, right_clearance) < self.safe_distance and self.escape_turn is None:
+            self.escape_turn = self.turn_speed if left_score >= right_score else -self.turn_speed
 
         # Positive angular velocity = left turn, negative = right
-        if left_clearance >= right_clearance:
+        if self.escape_turn is not None:
+            turn = self.escape_turn
+            direction = 'left (escaping)' if turn > 0 else 'right (escaping)'
+        elif left_score >= right_score:
             turn = self.turn_speed
             direction = 'left'
         else:
@@ -74,7 +101,17 @@ class Controller(Node):
             throttle_duration_sec=1.0
         )
 
+        self.stop_reason = None
         return 0.0, turn
+
+    def stop(self, reason):
+        # log immediately when the reason changes, otherwise once per second
+        if reason != self.stop_reason:
+            self.get_logger().warn(f'Stopping: {reason}')
+        else:
+            self.get_logger().warn(f'Stopping: {reason}', throttle_duration_sec=1.0)
+        self.stop_reason = reason
+        return 0.0, 0.0
 
     def step(self):
         distances = self.sensors.read()
@@ -99,6 +136,7 @@ def _run(sensor_class, args=None):
         pass
     finally:
         # stops the rover before shutting down
+        controller.get_logger().warn(f'Shutting down; last stop reason: {controller.stop_reason or "none, robot was moving"}')
         actuator.apply((0.0, 0.0))
         actuator.timer_callback()
 
