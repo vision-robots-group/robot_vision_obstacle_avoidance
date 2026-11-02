@@ -28,7 +28,7 @@ Both `controller` and `depth_controller` accept these ROS parameters (`--ros-arg
 
 `safe_distance`, `fov_deg`, `forward_speed` and `turn_speed` must be positive.
 
-`controller` (LiDAR) also accepts `angle_offset_deg` (default `-90.0`), added to every LiDAR angle so 0° points forward on the real rover. Use `angle_offset_deg:=0.0` if the scan is already aligned (e.g. in Gazebo). Always pass float values (`0.0`, not `0`).
+`controller` (LiDAR) also accepts `angle_offset_deg` (default `90.0`), added to every LiDAR angle so 0° points forward on the real rover (the LiDAR front arrow points to the rover's left). Use `angle_offset_deg:=0.0` if the scan is already aligned (e.g. in Gazebo). Always pass float values (`0.0`, not `0`).
 
 # One-command launch on the real UGV Rover (in the docker container)
 

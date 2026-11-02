@@ -17,7 +17,7 @@ class LidarSubscriber(Node):
             10)
         self.subscription
         self.scan = None
-        self.angle_offset = math.radians(self.declare_parameter('angle_offset_deg', -90.0).value)
+        self.angle_offset = math.radians(self.declare_parameter('angle_offset_deg', 90.0).value)
 
     def listener_callback(self, msg):
         self.scan = msg
