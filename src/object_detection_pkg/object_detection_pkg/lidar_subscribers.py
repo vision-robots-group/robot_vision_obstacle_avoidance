@@ -17,6 +17,7 @@ class LidarSubscriber(Node):
             10)
         self.subscription
         self.scan = None
+        self.angle_offset = math.radians(self.declare_parameter('angle_offset_deg', -90.0).value)
 
     def listener_callback(self, msg):
         self.scan = msg
@@ -32,7 +33,7 @@ class LidarSubscriber(Node):
         s = self.scan
         for i, r in enumerate(s.ranges):
             if math.isfinite(r) and s.range_min <= r <= s.range_max:
-                yield r, s.angle_min + i * s.angle_increment
+                yield r, s.angle_min + i * s.angle_increment + self.angle_offset
 
 
 def main(args=None):
