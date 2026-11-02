@@ -24,6 +24,6 @@ setup_env
 check_no_controller
 start_driver
 start_bg oak_d_lite "oak_d_lite.launch.py" ros2 launch ugv_vision oak_d_lite.launch.py
-wait_for_topic "$INFO_TOPIC" oak_d_lite
-wait_for_topic "$DEPTH_TOPIC" oak_d_lite
+wait_for_topic "$INFO_TOPIC" sensor_msgs/msg/CameraInfo oak_d_lite
+wait_for_topic "$DEPTH_TOPIC" sensor_msgs/msg/Image oak_d_lite
 run_controller depth_controller

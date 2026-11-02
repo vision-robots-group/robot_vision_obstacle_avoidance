@@ -88,12 +88,17 @@ start_bg() {
 }
 
 wait_for_topic() {
-    local topic="$1" name="$2"
+    local topic="$1" msg_type="$2" name="$3"
+    local deadline=$((SECONDS + SENSOR_TIMEOUT))
     log "waiting up to ${SENSOR_TIMEOUT}s for data on $topic"
-    if ! timeout "$SENSOR_TIMEOUT" ros2 topic echo "$topic" --once >/dev/null 2>&1; then
-        die "no data on $topic, check $LOG_DIR/$name.log"
-    fi
-    log "$topic is publishing"
+    while ((SECONDS < deadline)); do
+        if timeout 5 ros2 topic echo --once --no-arr "$topic" "$msg_type" >/dev/null 2>&1; then
+            log "$topic is publishing"
+            return
+        fi
+        sleep 1
+    done
+    die "no data on $topic, check $LOG_DIR/$name.log"
 }
 
 group_alive() {
