@@ -48,9 +48,9 @@ class Controller(Node):
         front = [(d, a) for d, a in readings if abs(a) <= self.fov]  
 
         # stop robot if there is insufficient forward information
-        if not front_bins or len(front) < 0.7 * len(front_bins): 
-            return self.stop(f'insufficient front data ({len(front)}/{len(front_bins)} bins)')
-
+        # if not front_bins or len(front) < 0.7 * len(front_bins): 
+        #     return self.stop(f'insufficient front data ({len(front)}/{len(front_bins)} bins)')
+            
         blocked = [(d, a) for d, a in front if d < self.safe_distance]  
 
         # No obstacle: continue forward
