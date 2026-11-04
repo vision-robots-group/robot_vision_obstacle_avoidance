@@ -4,7 +4,7 @@
   <name>object_detection_pkg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="losardosalvatorejr@gmail.com">salvatore</maintainer>
+  <maintainer email="ionut.moise@student.uva.nl">ionut</maintainer>
   <license>TODO: License declaration</license>
 
   <test_depend>ament_copyright</test_depend>

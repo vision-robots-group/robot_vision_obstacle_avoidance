@@ -4,7 +4,7 @@
   <name>obstacle_avoidance_pkg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="losardosalvatorejr@gmail.com">salvatore</maintainer>
+  <maintainer email="salvatore.lo.sardo@student.uva.nl">salvatore</maintainer>
   <license>TODO: License declaration</license>
 
   <test_depend>ament_copyright</test_depend>
