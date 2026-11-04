@@ -1,0 +1,2 @@
+safe_distance: 1.0 
+danger_zone_factor: 1.2 # obj detection processing objects in the danger zone = safe_distance * danger_zone_factor
