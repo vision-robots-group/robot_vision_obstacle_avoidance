@@ -1,2 +1,35 @@
+<<<<<<< HEAD
 safe_distance: 1.0 
 danger_zone_factor: 1.2 # obj detection processing objects in the danger zone = safe_distance * danger_zone_factor
+=======
+# Shared ROS 2 params for both packages:
+# --ros-args --params-file config.yaml
+
+/**:
+  ros__parameters:
+    safe_distance: 0.5      # m
+    fov_deg: 30.0           # front cone half-width
+    side_start_deg: 10.0
+    side_limit_deg: 45.0
+    turn_choice: "safe"     # "safe" or "clearance"
+
+agent:
+  ros__parameters:
+    v_max: 0.2              # m/s
+    v_slow: 0.1             # m/s
+    v_turn: 0.0             # m/s, 0 = turn in place
+    omega_max: 0.5          # rad/s
+
+    theta_avoid_deg: 45.0
+    theta_return_deg: 30.0
+    theta_tol_deg: 5.0
+    e_min: 0.4              # m
+    e_tol: 0.05             # m
+    pass_min: 0.5           # m
+    clear_ticks: 3
+
+    k_theta: 1.5
+    k_e: 1.0
+
+    rate: 10.0              # Hz
+>>>>>>> 77f3003 (Defined general config file (obj_detector params to be added))
