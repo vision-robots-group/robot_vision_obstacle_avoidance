@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'avoidance = obstacle_avoidance_pkg.main:main',
         ],
     },
 )
