@@ -15,7 +15,7 @@ class Controller(Node):
         super().__init__('controller')
         self.sensors = sensors
         self.safe_distance = self.positive_param('safe_distance', safe_distance)
-        self.danger_zone = self.safe_distance * danger_zone_factor # margin to look for objects a bit further as well since robot is moving
+        self.danger_zone = self.safe_distance * self.positive_param('danger_zone_factor', danger_zone_factor) # margin to look for objects a bit further as well since robot is moving
         self.fov = math.radians(10)
         self.bin_width = math.radians(5)
         self.robot_width = 0.255 + 0.01# 255mm + 0.01 margin
@@ -133,15 +133,9 @@ class Controller(Node):
 
 def _run(sensor_class, args=None):
     rclpy.init(args=args)
-    
-    with open('config.yaml', 'r') as file:
-        config = yaml.safe_load(file)
 
-    safe_distance = float(config["safe_distance"])
-    danger_zone_factor = float(config["danger_zone_factor"])
-    
     sensor = sensor_class()
-    controller = Controller(sensor, safe_distance=safe_distance, danger_zone_factor=danger_zone_factor)
+    controller = Controller(sensor)
 
     executor = SingleThreadedExecutor()
     for node in (controller, sensor):

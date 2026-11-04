@@ -1,13 +1,10 @@
-<<<<<<< HEAD
-safe_distance: 1.0 
-danger_zone_factor: 1.2 # obj detection processing objects in the danger zone = safe_distance * danger_zone_factor
-=======
 # Shared ROS 2 params for both packages:
 # --ros-args --params-file config.yaml
 
 /**:
   ros__parameters:
-    safe_distance: 0.5      # m
+    safe_distance: 1.0      # m
+    danger_zone_factor: 1.2 # obj detection processes objects within safe_distance * danger_zone_factor
     fov_deg: 30.0           # front cone half-width
     side_start_deg: 10.0
     side_limit_deg: 45.0
@@ -32,4 +29,3 @@ agent:
     k_e: 1.0
 
     rate: 10.0              # Hz
->>>>>>> 77f3003 (Defined general config file (obj_detector params to be added))
