@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='chavgova',
-    maintainer_email='chavgova@todo.todo',
+    maintainer='salvatore',
+    maintainer_email='losardosalvatorejr@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -23,9 +23,7 @@ setup(
         ],
     },
     entry_points={
-    'console_scripts': [
-        'controller = object_detection_pkg.controller:main',
-        'depth_controller = object_detection_pkg.controller:main_depth'
-    ],
+        'console_scripts': [
+        ],
     },
 )
