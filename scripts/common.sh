@@ -20,18 +20,18 @@ die() { log "ERROR: $*" >&2; exit 1; }
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [name:=value | --name value | --name=value] ...
+Usage: $(basename "$0") [lidar | depth] [name:=value | --name value | --name=value] ...
 
-Every argument is forwarded to the controller as a ROS parameter (-p name:=value).
+Parameters are loaded from config.yaml, every argument overrides one of them (-p name:=value).
 
 Examples:
-  $(basename "$0") safe_distance:=0.5
-  $(basename "$0") --safe_distance 0.5 --forward_speed 0.15 --turn_choice clearance
+  $(basename "$0") lidar safe_distance:=0.5
+  $(basename "$0") depth --safe_distance 0.5 --v_max 0.15 --camera_height 0.12
 
-Controller parameters:
+Main parameters (see config.yaml for all of them):
   safe_distance  (1.0)    fov_deg        (30.0)
-  forward_speed  (0.2)    turn_speed     (0.5)
-  turn_choice    (space | clearance)
+  v_max          (0.2)    v_slow         (0.1)
+  omega_max      (0.5)    turn_choice    (safe | clearance)
 $EXTRA_USAGE
 Environment:
   ROS_DOMAIN_ID   (default 18, current: $ROS_DOMAIN_ID)
@@ -148,13 +148,33 @@ cleanup() {
 }
 
 check_no_controller() {
-    if pgrep -f "object_detection_pkg/(depth_)?controller" >/dev/null; then
+    if pgrep -f "object_detection_pkg/(depth_)?(controller|detector)|obstacle_avoidance_pkg/avoidance" >/dev/null; then
         die "another obstacle avoidance controller is already running, stop it first"
     fi
 }
 
 start_driver() {
     start_bg ugv_driver "ugv_bringup/ugv_driver" ros2 run ugv_bringup ugv_driver
+}
+
+start_odometry() {
+    if ros2 topic info /odom 2>/dev/null | grep -q "Publisher count: [1-9]"; then
+        log "/odom already published, leaving it untouched"
+        return
+    fi
+    ros2 pkg executables ugv_bringup | grep -q " ugv_bringup$" \
+        || die "ugv_bringup ugv_bringup not found, see STARTUP.md (Odometry)"
+    ros2 pkg executables ugv_base_node | grep -q " base_node$" \
+        || die "ugv_base_node base_node not found, see STARTUP.md (Odometry)"
+    start_bg ugv_bringup "ugv_bringup/ugv_bringup" ros2 run ugv_bringup ugv_bringup
+    start_bg base_node "ugv_base_node/base_node" ros2 run ugv_base_node base_node
+}
+
+run_avoidance() {
+    log "LIFT THE ROVER OR CLEAR THE FLOOR: it drives as soon as the avoidance starts"
+    log "running: ros2 run obstacle_avoidance_pkg avoidance $*"
+    log "press Ctrl-C to stop the rover and shut everything down"
+    ros2 run obstacle_avoidance_pkg avoidance "$@"
 }
 
 run_controller() {
