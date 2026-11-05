@@ -54,7 +54,7 @@ class Agent(Node):
     def __init__(self, hist_sub: ObjectDetectionSubscriber):
         super().__init__('agent')
         self.hist_sub = hist_sub
-        self.origin = (0.0, 0.0)
+        self.origin = None # (x, y), set on first pose
         self.angle = 0.0
         self.hist = []
         self.pose = None # (x, y, theta)
@@ -109,8 +109,34 @@ class Agent(Node):
 
     def step(self):
         """Control loop. Execute on each timer tick."""
-        # TODO
-        self.publish_cmd(0.0, 0.0)
+        hist = self.hist_sub.read()
+        if hist is None or self.pose is None:
+            self.publish_cmd(0.0, 0.0) # no fresh data, stop
+            return
+        self.hist = hist
+
+        x, y, th = self.pose
+        if self.origin is None: # first pose, save the reference line
+            self.origin, self.angle = (x, y), th
+        s, e = self.__errors(x, y)
+        front_blocked = any(d < self.safe_distance for d, a in self.hist if abs(a) <= self.fov)
+
+        # new object in front: start the avoidance again, the line stays the same
+        if front_blocked and self.state not in (State.CORNER, State.TURN_AWAY):
+            self.sigma = self.__pick_side()
+            self.state = State.TURN_AWAY
+
+        v, w = self.callback_dict[self.state](th, s, e, front_blocked)
+        self.publish_cmd(v, max(-self.omega_max, min(self.omega_max, w)))
+
+    def __errors(self, x, y):
+        """
+        Progress along the line (``s``) and distance from it (``e``, > 0 if left of the line).
+        """
+        dx, dy = x - self.origin[0], y - self.origin[1]
+        s = dx * math.cos(self.angle) + dy * math.sin(self.angle)
+        e = -dx * math.sin(self.angle) + dy * math.cos(self.angle)
+        return s, e
 
     def __hold(self, th, target):
         """
