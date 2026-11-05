@@ -2,10 +2,14 @@ import math
 
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 
 from .utils import State, wrap
+from .histogram_subscriber import ObjectDetectionSubscriber
 
 DEFAULTS = {
+    'odom_topic': '/odom',
+    'cmd_vel_topic': '/cmd_vel',
     'safe_distance': 0.5,
     'fov_deg': 30.0,
     'side_start_deg': 10.0,
@@ -47,11 +51,13 @@ class Agent(Node):
     If both sides are blocked we rotate in place till the front is clear (CORNER).
     If a new object shows up during the avoidance we just start again from TURN_AWAY, the line stays the same.
     """
-    def __init__(self):
+    def __init__(self, hist_sub: ObjectDetectionSubscriber):
         super().__init__('agent')
+        self.hist_sub = hist_sub
         self.origin = (0.0, 0.0)
         self.angle = 0.0
         self.hist = []
+        self.pose = None # (x, y, theta)
         self.state = State.CRUISE
         self.sigma = 1
         self.clear_count = 0
@@ -69,16 +75,49 @@ class Agent(Node):
 
         self.__load_config()
 
+        self.create_subscription(Odometry, self.odom_topic, self.__odom_callback, 10)
+        self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
+        self.timer = self.create_timer(1.0 / self.rate, self.step)
+
     def __load_config(self):
         """
-        Load the parameters (set with ``--params-file config.yaml``).
+        Load the parameters (``--params-file config.yaml``).
         """
         for k, default in DEFAULTS.items():
             v = self.declare_parameter(k, default).value
             if k.endswith('_deg'): setattr(self, k[:-4], math.radians(v)) # convert to radians if in degrees
             else: setattr(self, k, v)
 
+    # ROS I/O ==============================================
+
+    def __odom_callback(self, msg):
+        """
+        Odometry callback, saves the pose as (x, y, theta).
+        p is the position, q is the quaternion orientation, theta is the yaw angle.
+        """
+        p = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+        self.pose = (p.x, p.y, 2.0 * math.atan2(q.z, q.w))
+
+
+    def publish_cmd(self, v, w):
+        """Used to publish to ``/cmd_vel``."""
+        msg = Twist()
+        msg.linear.x = float(v)
+        msg.angular.z = float(w)
+        self.cmd_pub.publish(msg)
+
+    def step(self):
+        """Control loop. Execute on each timer tick."""
+        # TODO
+        self.publish_cmd(0.0, 0.0)
+
     def __hold(self, th, target):
+        """
+        Used to turn the robot towards the target angle and keep it there.
+        It uses a proportional controller and bounds the angular velocity to omega_max.
+        We want to slow down when close to the target angle, and this is a simple way to do it.
+        """
         w = self.k_theta * wrap(target - th)
         return max(-self.omega_max, min(self.omega_max, w))
 

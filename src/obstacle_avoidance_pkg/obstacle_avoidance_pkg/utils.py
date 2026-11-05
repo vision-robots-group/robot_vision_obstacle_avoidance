@@ -12,4 +12,3 @@ class State(Enum):
 
 def wrap(a):
     return math.atan2(math.sin(a), math.cos(a))
-
