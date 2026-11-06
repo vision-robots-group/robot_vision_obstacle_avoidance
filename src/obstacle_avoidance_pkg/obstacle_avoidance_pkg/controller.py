@@ -3,12 +3,15 @@ import math
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 
 from .utils import State, wrap
 from .histogram_subscriber import ObjectDetectionSubscriber
 
 DEFAULTS = {
     'odom_topic': '/odom',
+    'imu_topic': '/imu/data_raw',
+    'calib_time': 3.0,
     'cmd_vel_topic': '/cmd_vel',
     'safe_distance': 0.5,
     'half_width': 0.2,
@@ -62,6 +65,12 @@ class Agent(Node):
         self.hist = []
         self.pose = None # (x, y, theta)
         self.odom_stamp = None
+        self.imu_stamp = None
+        self.calib_start = None
+        self.gyro = []
+        self.bias = None
+        self.yaw = 0.0
+        self.x, self.y = 0.0, 0.0
         self.heading = 0.0
         self.state = State.CRUISE
         self.sigma = 1
@@ -81,6 +90,7 @@ class Agent(Node):
         self.__load_config()
 
         self.create_subscription(Odometry, self.odom_topic, self.__odom_callback, 10)
+        self.create_subscription(Imu, self.imu_topic, self.__imu_callback, 50)
         self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
         self.timer = self.create_timer(1.0 / self.rate, self.step)
 
@@ -97,13 +107,27 @@ class Agent(Node):
 
     def __odom_callback(self, msg):
         """
-        Odometry callback, saves the pose as (x, y, theta).
-        p is the position, q is the quaternion orientation, theta is the yaw angle.
+        Odometry callback, integrates the wheel speed along the gyro yaw into the pose (x, y, theta).
         """
-        p = msg.pose.pose.position
-        q = msg.pose.pose.orientation
-        self.pose = (p.x, p.y, 2.0 * math.atan2(q.z, q.w))
-        self.odom_stamp = self.get_clock().now()
+        now = self.get_clock().now()
+        if self.bias is not None and self.odom_stamp is not None:
+            ds = msg.twist.twist.linear.x * (now - self.odom_stamp).nanoseconds / 1e9
+            self.x += ds * math.cos(self.yaw)
+            self.y += ds * math.sin(self.yaw)
+            self.pose = (self.x, self.y, self.yaw)
+        self.odom_stamp = now
+
+    def __imu_callback(self, msg):
+        now = self.get_clock().now()
+        gz = msg.angular_velocity.z
+        if self.bias is None:
+            if self.calib_start is None: self.calib_start = now
+            self.gyro.append(gz)
+            if (now - self.calib_start).nanoseconds / 1e9 >= self.calib_time:
+                self.bias = sum(self.gyro) / len(self.gyro)
+        elif self.imu_stamp is not None:
+            self.yaw = wrap(self.yaw + (gz - self.bias) * (now - self.imu_stamp).nanoseconds / 1e9)
+        self.imu_stamp = now
 
 
     def publish_cmd(self, v, w):
@@ -116,8 +140,10 @@ class Agent(Node):
     def step(self):
         """Control loop. Execute on each timer tick."""
         hist = self.hist_sub.read()
-        odom_age = None if self.odom_stamp is None else (self.get_clock().now() - self.odom_stamp).nanoseconds / 1e9
-        if hist is None or odom_age is None or not 0 <= odom_age <= self.odom_max_age:
+        now = self.get_clock().now()
+        fresh = all(t is not None and 0 <= (now - t).nanoseconds / 1e9 <= self.odom_max_age
+                    for t in (self.odom_stamp, self.imu_stamp))
+        if hist is None or self.pose is None or not fresh:
             self.publish_cmd(0.0, 0.0) # no fresh data, stop
             return
         self.hist = hist

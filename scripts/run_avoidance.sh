@@ -34,8 +34,7 @@ else
 fi
 
 start_odometry
-start_imu_filter
-wait_for_topic /imu/data sensor_msgs/msg/Imu imu_filter
+wait_for_topic /imu/data_raw sensor_msgs/msg/Imu ugv_bringup
 wait_for_topic /odom nav_msgs/msg/Odometry base_node
 
 DETECTOR=detector
