@@ -14,9 +14,9 @@ agent:
   ros__parameters:
     safe_distance: 0.5      # m
     half_width: 0.2         # m
-    v_max: 0.2              # m/s
-    v_slow: 0.1             # m/s
-    v_turn: 0.0             # m/s, 0 = turn in place
+    v_max: 0.5              # m/s
+    v_slow: 0.2             # m/s
+    v_turn: 0.1             # m/s, 0 = turn in place
     omega_max: 0.5          # rad/s
 
     theta_avoid_deg: 45.0
