@@ -16,7 +16,7 @@ class Controller(Node):
         self.sensors = sensors
         self.safe_distance = self.positive_param('safe_distance', safe_distance)
         self.danger_zone = self.safe_distance * self.positive_param('danger_zone_factor', danger_zone_factor) # margin to look for objects a bit further as well since robot is moving
-        self.fov = math.radians( self.positive_param('hist_fov_deg', 120.0)) # field of view
+        self.fov = math.radians( self.positive_param('hist_fov_deg', 120.0) / 2) # field of view
         self.bin_width = math.radians(5)
         self.robot_width = 0.255 + 0.01# 255mm + 0.01 margin
         # tghe depth cam reports forward depth; lidar reports radial dist
