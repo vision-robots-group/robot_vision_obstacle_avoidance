@@ -11,6 +11,7 @@ DEFAULTS = {
     'odom_topic': '/odom',
     'cmd_vel_topic': '/cmd_vel',
     'safe_distance': 0.5,
+    'half_width': 0.2,
     'fov_deg': 30.0,
     'side_start_deg': 10.0,
     'side_limit_deg': 45.0,
@@ -125,12 +126,16 @@ class Agent(Node):
         if self.origin is None: # first pose, save the reference line
             self.origin, self.angle = (x, y), th
         s, e = self.__errors(x, y)
-        front_blocked = any(d < self.safe_distance for d, a in self.hist if abs(a) <= self.fov)
+        front_blocked = any(d * math.cos(a) < self.safe_distance and abs(d * math.sin(a)) < self.half_width
+                            for d, a in self.hist if abs(a) <= self.fov)
 
         # new object in front: start the avoidance again, the line stays the same
         if front_blocked and self.state not in (State.CORNER, State.TURN_AWAY):
-            self.sigma = self.__pick_side()
-            self.state = State.TURN_AWAY
+            if self.state == State.CRUISE:
+                self.sigma = self.__pick_side()
+                self.state = State.TURN_AWAY
+            else:
+                self.state = State.CORNER
 
         v, w = self.callback_dict[self.state](th, s, e, front_blocked)
         self.publish_cmd(v, max(-self.omega_max, min(self.omega_max, w)))
