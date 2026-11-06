@@ -8,7 +8,6 @@
     fov_deg: 30.0           # front cone half-width
     side_start_deg: 10.0
     side_limit_deg: 45.0
-    turn_choice: "clearance"     # "safe" or "clearance"
 
 agent:
   ros__parameters:
@@ -20,12 +19,12 @@ agent:
     omega_max: 0.5          # rad/s
 
     theta_avoid_deg: 45.0
-    theta_return_deg: 30.0
     theta_tol_deg: 5.0
     e_min: 0.4              # m
-    e_tol: 0.05             # m
     pass_min: 0.5           # m
     clear_ticks: 3
+    near_dist: 1.5
+    ramp: 1.0
 
     k_theta: 1.5
     k_e: 1.0

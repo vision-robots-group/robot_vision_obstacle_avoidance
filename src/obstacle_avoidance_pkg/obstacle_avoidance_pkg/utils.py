@@ -6,8 +6,6 @@ class State(Enum):
     TURN_AWAY = auto()
     SIDESTEP = auto()
     PASS = auto()
-    RETURN = auto()
-    REALIGN = auto()
     CORNER = auto()
 
 def wrap(a):

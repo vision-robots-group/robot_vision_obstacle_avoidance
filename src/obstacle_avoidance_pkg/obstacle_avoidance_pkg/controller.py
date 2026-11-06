@@ -18,19 +18,17 @@ DEFAULTS = {
     'fov_deg': 30.0,
     'side_start_deg': 10.0,
     'side_limit_deg': 45.0,
-    'turn_choice': 'safe',
     'v_max': 0.2,
     'v_slow': 0.1,
     'v_turn': 0.0,
     'omega_max': 0.5,
     'theta_avoid_deg': 45.0,
-    'theta_return_deg': 30.0,
     'theta_tol_deg': 5.0,
     'e_min': 0.4,
-    'e_tol': 0.05,
     'pass_min': 0.5,
     'clear_ticks': 3,
-    'free_dist': 3.0,
+    'near_dist': 1.5,
+    'ramp': 1.0,
     'odom_max_age': 0.5,
     'k_theta': 1.5,
     'k_e': 1.0,
@@ -48,11 +46,10 @@ class Agent(Node):
 
     Object avoidance case:
     - We are going straight on the line (CRUISE)
-    - An object is detected in front, we pick the freer side and rotate towards it (TURN_AWAY)
+    - An object is detected in front, we pick the side whose obstacle edge is closer and rotate towards it (TURN_AWAY)
     - We keep going at that angle till the front is clear and we are far enough from the line (SIDESTEP)
     - We go parallel to the line till we passed the object (PASS)
-    - We go back towards the line till we are on it again (RETURN)
-    - We rotate back to the original heading (REALIGN) and go straight again
+    - We go back to CRUISE, whose line-following terms bring us back on the line
 
     If both sides are blocked we rotate in place till the front is clear (CORNER).
     If a new object shows up during the avoidance we just start again from TURN_AWAY, the line stays the same.
@@ -82,9 +79,7 @@ class Agent(Node):
             State.CRUISE: self.__cruise,
             State.TURN_AWAY: self.__turn_away,
             State.SIDESTEP: self.__clear_front,
-            State.PASS: self.__drive_by_obstacle,
-            State.RETURN: self.__return_to_path,
-            State.REALIGN: self.__realign
+            State.PASS: self.__drive_by_obstacle
         }
 
         self.__load_config()
@@ -152,13 +147,12 @@ class Agent(Node):
         if self.origin is None: # first pose, save the reference line
             self.origin, self.angle = (x, y), th
         s, e = self.__errors(x, y)
-        front_blocked = any(d * math.cos(a) < self.safe_distance and abs(d * math.sin(a)) < self.half_width
-                            for d, a in self.hist if abs(a) <= self.fov)
+        front_blocked = any(self.__in_front(d, a) for d, a in self.hist if abs(a) <= self.fov)
 
         # new object in front: start the avoidance again, the line stays the same
         if front_blocked and self.state not in (State.CORNER, State.TURN_AWAY):
             if self.state == State.CRUISE:
-                self.sigma = self.__pick_side()
+                self.sigma = self.__pick_side(e)
                 self.state = State.TURN_AWAY
             else:
                 self.state = State.CORNER
@@ -190,12 +184,29 @@ class Agent(Node):
     def __side_clear(self, side):
         return all(not d < self.safe_distance for d, _ in self.__sector(side))
 
-    def __pick_side(self):
-        def score(side):
-            sector = [(d if math.isfinite(d) else self.free_dist, a) for d, a in self.__sector(side)]
-            if self.turn_choice == 'clearance': return sum(d * (1 - abs(a) / self.side_limit) for d, a in sector)
-            return sum(d for d, _ in sector)
-        return 1 if score(1) >= score(-1) else -1
+    def __in_front(self, d, a):
+        return d * math.cos(a) < self.safe_distance and abs(d * math.sin(a)) < self.half_width
+
+    def __pick_side(self, e):
+        bins = sorted(self.hist, key=lambda b: b[1])
+        blocked = [not math.isfinite(d) or d < self.near_dist for d, _ in bins]
+        seeds = [k for k, (d, a) in enumerate(bins) if abs(a) <= self.fov and self.__in_front(d, a)]
+        towards_line = -1 if e > 0 else 1
+        if not seeds: return towards_line
+        i = j = min(seeds, key=lambda k: abs(bins[k][1]))
+        while i > 0 and blocked[i - 1]: i -= 1
+        while j < len(bins) - 1 and blocked[j + 1]: j += 1
+        left = math.pi if j == len(bins) - 1 else bins[j][1]
+        right = math.pi if i == 0 else -bins[i][1]
+        if abs(left - right) < 1e-6: return towards_line
+        return 1 if left < right else -1
+
+    def __speed(self, v_min):
+        front = [d * math.cos(a) if abs(d * math.sin(a)) < self.half_width else math.inf
+                 for d, a in self.hist if math.isfinite(d) and abs(a) <= self.fov]
+        if not front: return v_min
+        k = max(0.0, min(1.0, (min(front) - self.safe_distance) / self.ramp))
+        return v_min + k * (self.v_max - v_min)
 
     # Callbacks ============================================
     # Each of them returns a linear and angular velocity based on
@@ -203,7 +214,7 @@ class Agent(Node):
 
     def __cruise(self, th, s, e, front_blocked):
         """Cruise: just follow the line."""
-        return self.v_max, -self.k_e * e + self.k_theta * wrap(self.angle - th)
+        return self.__speed(self.v_slow), -self.k_e * e + self.k_theta * wrap(self.angle - th)
 
     def __turn_away(self, th, s, e, front_blocked):
         """Turn away: spin toward the free side."""
@@ -228,20 +239,8 @@ class Agent(Node):
         if not self.__side_clear(-self.sigma):
             self.s_pass = s
         elif s - self.s_pass >= self.pass_min:
-            self.state = State.RETURN
-        return self.v_slow, self.__hold(th, self.angle)
-
-    def __return_to_path(self, th, s, e, front_blocked):
-        """Return: head back to the line."""
-        if abs(e) < self.e_tol:
-            self.state = State.REALIGN
-        return self.v_slow, self.__hold(th, self.angle - self.sigma * self.theta_return)
-
-    def __realign(self, th, s, e, front_blocked):
-        """Realign: face forward again."""
-        if abs(wrap(self.angle - th)) < self.theta_tol:
             self.state = State.CRUISE
-        return self.v_turn, self.__hold(th, self.angle)
+        return self.__speed(self.v_slow), self.__hold(th, self.angle)
 
     def __corner(self, th, s, e, front_blocked):
         """Corner: stuck, spin in place till something opens up."""
