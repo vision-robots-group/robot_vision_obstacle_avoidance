@@ -8,7 +8,7 @@
     fov_deg: 30.0           # front cone half-width
     side_start_deg: 10.0
     side_limit_deg: 45.0
-    turn_choice: "safe"     # "safe" or "clearance"
+    turn_choice: "clearance"     # "safe" or "clearance"
 
 agent:
   ros__parameters:
