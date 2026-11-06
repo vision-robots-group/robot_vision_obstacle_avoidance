@@ -170,6 +170,19 @@ start_odometry() {
     start_bg base_node "ugv_base_node/base_node" ros2 run ugv_base_node base_node
 }
 
+start_imu_filter() {
+    if ros2 topic info /imu/data 2>/dev/null | grep -q "Publisher count: [1-9]"; then
+        log "/imu/data already published, leaving it untouched"
+        return
+    fi
+    ros2 pkg executables imu_filter_madgwick | grep -q " imu_filter_madgwick_node$" \
+        || die "imu_filter_madgwick not found, /odom would have no heading"
+    local params
+    params="$(ros2 pkg prefix ugv_bringup)/share/ugv_bringup/param/imu_filter_param.yaml"
+    start_bg imu_filter "imu_filter_madgwick_node" ros2 run imu_filter_madgwick imu_filter_madgwick_node \
+        --ros-args --params-file "$params"
+}
+
 run_avoidance() {
     log "LIFT THE ROVER OR CLEAR THE FLOOR: it drives as soon as the avoidance starts"
     log "running: ros2 run obstacle_avoidance_pkg avoidance $*"
