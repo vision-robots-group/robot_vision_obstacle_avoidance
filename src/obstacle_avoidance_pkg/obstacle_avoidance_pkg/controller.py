@@ -26,6 +26,8 @@ DEFAULTS = {
     'e_tol': 0.05,
     'pass_min': 0.5,
     'clear_ticks': 3,
+    'free_dist': 3.0,
+    'odom_max_age': 0.5,
     'k_theta': 1.5,
     'k_e': 1.0,
     'rate': 10.0,
@@ -58,6 +60,8 @@ class Agent(Node):
         self.angle = 0.0
         self.hist = []
         self.pose = None # (x, y, theta)
+        self.odom_stamp = None
+        self.heading = 0.0
         self.state = State.CRUISE
         self.sigma = 1
         self.clear_count = 0
@@ -98,6 +102,7 @@ class Agent(Node):
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
         self.pose = (p.x, p.y, 2.0 * math.atan2(q.z, q.w))
+        self.odom_stamp = self.get_clock().now()
 
 
     def publish_cmd(self, v, w):
@@ -110,7 +115,8 @@ class Agent(Node):
     def step(self):
         """Control loop. Execute on each timer tick."""
         hist = self.hist_sub.read()
-        if hist is None or self.pose is None:
+        odom_age = None if self.odom_stamp is None else (self.get_clock().now() - self.odom_stamp).nanoseconds / 1e9
+        if hist is None or odom_age is None or not 0 <= odom_age <= self.odom_max_age:
             self.publish_cmd(0.0, 0.0) # no fresh data, stop
             return
         self.hist = hist
@@ -151,13 +157,13 @@ class Agent(Node):
         return [(d, a) for d, a in self.hist if self.side_start <= side * a <= self.side_limit]
 
     def __side_clear(self, side):
-        return all(d >= self.safe_distance for d, _ in self.__sector(side))
+        return all(not d < self.safe_distance for d, _ in self.__sector(side))
 
     def __pick_side(self):
         def score(side):
-            if self.turn_choice == 'clearance':
-                return sum(d * (1 - abs(a) / self.side_limit) for d, a in self.__sector(side))
-            return sum(d for d, _ in self.__sector(side))
+            sector = [(d if math.isfinite(d) else self.free_dist, a) for d, a in self.__sector(side)]
+            if self.turn_choice == 'clearance': return sum(d * (1 - abs(a) / self.side_limit) for d, a in sector)
+            return sum(d for d, _ in sector)
         return 1 if score(1) >= score(-1) else -1
 
     # Callbacks ============================================
@@ -175,7 +181,8 @@ class Agent(Node):
             return 0.0, 0.0
         target = self.angle + self.sigma * self.theta_avoid
         if abs(wrap(target - th)) < self.theta_tol:
-            self.state, self.clear_count = State.SIDESTEP, 0
+            self.state = State.CORNER if front_blocked else State.SIDESTEP
+            self.clear_count, self.heading = 0, target
         return self.v_turn, self.__hold(th, target)
 
     def __clear_front(self, th, s, e, front_blocked):
@@ -183,11 +190,13 @@ class Agent(Node):
         self.clear_count = 0 if front_blocked else self.clear_count + 1
         if self.clear_count >= self.clear_ticks and abs(e) >= self.e_min:
             self.state, self.s_pass = State.PASS, s
-        return self.v_slow, self.__hold(th, self.angle + self.sigma * self.theta_avoid)
+        return self.v_slow, self.__hold(th, self.heading)
 
     def __drive_by_obstacle(self, th, s, e, front_blocked):
         """Pass: go straight next to the obstacle."""
-        if s - self.s_pass >= self.pass_min and self.__side_clear(-self.sigma):
+        if not self.__side_clear(-self.sigma):
+            self.s_pass = s
+        elif s - self.s_pass >= self.pass_min:
             self.state = State.RETURN
         return self.v_slow, self.__hold(th, self.angle)
 
@@ -205,6 +214,5 @@ class Agent(Node):
 
     def __corner(self, th, s, e, front_blocked):
         """Corner: stuck, spin in place till something opens up."""
-        if not front_blocked:
-            self.state, self.clear_count = State.SIDESTEP, 0
+        if not front_blocked: self.state, self.clear_count, self.heading = State.SIDESTEP, 0, th
         return 0.0, self.sigma * self.omega_max
