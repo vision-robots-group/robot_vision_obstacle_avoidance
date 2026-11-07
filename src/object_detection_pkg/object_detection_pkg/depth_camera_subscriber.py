@@ -52,7 +52,12 @@ def depth_to_histogram(depth_m, fx, cx, fy, cy, camera_height=0.10,
         # we require sufficient data to trust bin
         if seen.size and seen.sum() >= max(20, 0.1 * seen.size):
             # only floor / far pixels: free up to max range
-            distance = float(np.percentile(valid, 10)) if valid.size >= 20 else max_range
+            if valid.size >= 20:
+                distance = float(np.percentile(valid, 10))
+            elif valid.size:
+                distance = math.nan
+            else:
+                distance = max_range
         else:
             distance = math.nan  # Unknown, not free
 
