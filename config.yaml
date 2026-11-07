@@ -9,6 +9,13 @@
     side_start_deg: 10.0
     side_limit_deg: 45.0
 
+detection_node:
+  ros__parameters:
+    safe_distance: 1.0      # m
+    danger_zone_factor: 1.2 # obj detection processes objects within safe_distance * danger_zone_factor
+    hist_fov_deg: 120.0  # has to be <360; total coverage 120 means -60 to +60 degrees
+    bin_width_deg: 5.0   # angular width of each bin; must be a factor of hist_fov_deg
+
 agent:
   ros__parameters:
     safe_distance: 0.5      # m
