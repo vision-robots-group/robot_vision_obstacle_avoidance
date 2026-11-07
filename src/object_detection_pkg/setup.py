@@ -24,8 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'detector = object_detection_pkg.controller:main',
-            'depth_detector = object_detection_pkg.controller:main_depth',
+            'detector = object_detection_pkg.detection_node:main',
+            'depth_detector = object_detection_pkg.detection_node:main_depth',
         ],
     },
 )

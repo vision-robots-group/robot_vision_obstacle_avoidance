@@ -10,19 +10,34 @@ from object_detection_pkg.depth_camera_subscriber import DepthCameraSubscriber
 
 
 
-class Controller(Node):
+class DetectionNode(Node):
     def __init__(self, sensors, safe_distance=1.0, danger_zone_factor=1.2):
-        super().__init__('controller')
+        super().__init__('detection_node')
         self.sensors = sensors
         self.safe_distance = self.positive_param('safe_distance', safe_distance)
         self.danger_zone = self.safe_distance * self.positive_param('danger_zone_factor', danger_zone_factor) # margin to look for objects a bit further as well since robot is moving
-        self.fov = math.radians( self.positive_param('hist_fov_deg', 120.0) / 2) # field of view
-        self.bin_width = math.radians(5)
         self.robot_width = 0.255 + 0.01# 255mm + 0.01 margin
         # tghe depth cam reports forward depth; lidar reports radial dist
         self.is_depth = isinstance(sensors, DepthCameraSubscriber)
         self.publisher = self.create_publisher( Float32MultiArray, 'obj_detect', 10 )
-        self.timer = self.create_timer(0.1, self.step)
+        self.timer = self.create_timer(0.1, self.send_hist)
+        
+        hist_fov_deg = self.positive_param('hist_fov_deg', 120.0)
+        bin_width_deg = self.positive_param('bin_width_deg', 5.0)
+
+        bin_count = hist_fov_deg / bin_width_deg
+
+        if bin_count < 1 or not math.isclose( bin_count, round(bin_count), rel_tol=0.0, abs_tol=1e-9):
+            raise ValueError( 'hist_fov_deg must be divisible by bin_width_deg' )
+
+        self.fov = math.radians(hist_fov_deg / 2)
+        self.bin_width = math.radians(bin_width_deg)
+
+        self.get_logger().info(
+            f'Histogram: total FOV={hist_fov_deg:g} deg, '
+            f'bin width={bin_width_deg:g} deg, '
+            f'bins={round(bin_count)}'
+        )
 
     def positive_param(self, name, default):
         value = float(self.declare_parameter(name, float(default)).value)
@@ -33,10 +48,7 @@ class Controller(Node):
     def make_histogram(self, distances, angles):
         count = round(2 * self.fov / self.bin_width)
         values = [math.nan] * count
-        centers = [
-            -self.fov + (i + 0.5) * self.bin_width
-            for i in range(count)
-        ]
+        centers = [ -self.fov + (i + 0.5) * self.bin_width for i in range(count) ]
 
         for d, a in zip(distances, angles):
             # we ignore empty / invalid readings
@@ -49,6 +61,12 @@ class Controller(Node):
             a = math.atan2(math.sin(a), math.cos(a))
             if abs(a) > self.fov:
                 continue
+            # the depth cam provides forward depth Z but we want to publish radial distance r
+            if self.is_depth:
+                cosine = math.cos(a)
+                if cosine <= 1e-6: continue
+                d /= cosine
+                if not math.isfinite(d): continue
 
             index = min( int((a + self.fov) / self.bin_width), count - 1)
 
@@ -59,10 +77,10 @@ class Controller(Node):
         return list(zip(values, centers))
 
     def point(self, distance, angle):
-        if self.is_depth:
-            return distance * math.tan(angle), distance
-
-        return distance * math.sin(angle), distance * math.cos(angle)
+        return (
+            distance * math.sin(angle),
+            distance * math.cos(angle)
+        )
 
     def fill_small_gaps(self, front):
         # postprocessing
@@ -102,11 +120,11 @@ class Controller(Node):
 
         return front
 
-    def step(self):
+    def send_hist(self):
         distances = self.sensors.read()
         angles = self.sensors.get_angles()
 
-        if distances is None or angles is None:
+        if (distances is None or angles is None or len(distances) != len(angles)):
             status = getattr(self.sensors, 'status', 'unknown')
             self.get_logger().warn(f'No sensor data ({status})', throttle_duration_sec=1.0 )
 
@@ -135,10 +153,11 @@ def _run(sensor_class, args=None):
     rclpy.init(args=args)
 
     sensor = sensor_class()
-    controller = Controller(sensor)
+    detector = DetectionNode(sensor)
 
     executor = SingleThreadedExecutor()
-    for node in (controller, sensor):
+
+    for node in (detector, sensor):
         executor.add_node(node)
 
     try:
@@ -148,7 +167,7 @@ def _run(sensor_class, args=None):
     finally:
         executor.shutdown()
 
-        for node in (controller, sensor):
+        for node in (detector, sensor):
             node.destroy_node()
 
         rclpy.shutdown()
