@@ -40,7 +40,7 @@ Environment:
   STOP_TIMEOUT    seconds to wait for each node to stop on Ctrl-C (default 10)
   LOG_DIR         background node logs (default /tmp/obstacle_avoidance_logs)
 
-Ctrl-C stops the controller (zero velocity), then the sensor and driver started by this script.
+Ctrl-C stops the avoidance (zero velocity), then the nodes started by this script, in reverse order.
 EOF
 }
 
@@ -175,16 +175,4 @@ run_avoidance() {
     log "running: ros2 run obstacle_avoidance_pkg avoidance $*"
     log "press Ctrl-C to stop the rover and shut everything down"
     ros2 run obstacle_avoidance_pkg avoidance "$@"
-}
-
-run_controller() {
-    local executable="$1"
-    log "LIFT THE ROVER OR CLEAR THE FLOOR: it drives as soon as the controller starts"
-    log "running: ros2 run object_detection_pkg $executable --ros-args ${ROS_PARAMS[*]}"
-    log "press Ctrl-C to stop the rover and shut everything down"
-    if [[ ${#ROS_PARAMS[@]} -gt 0 ]]; then
-        ros2 run object_detection_pkg "$executable" --ros-args "${ROS_PARAMS[@]}"
-    else
-        ros2 run object_detection_pkg "$executable"
-    fi
 }
