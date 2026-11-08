@@ -3,9 +3,9 @@
 <package format="3">
   <name>object_detection_pkg</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Builds a polar obstacle histogram from LiDAR or depth camera data and publishes it on /obj_detect.</description>
   <maintainer email="ionut.moise@student.uva.nl">ionut</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

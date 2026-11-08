@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='salvatore',
     maintainer_email='salvatore.lo.sardo@student.uva.nl',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='State machine that follows a reference line and drives around obstacles using the /obj_detect histogram and odometry.',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',

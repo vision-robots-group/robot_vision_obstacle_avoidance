@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='ionut',
     maintainer_email='ionut.moise@student.uva.nl',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Builds a polar obstacle histogram from LiDAR or depth camera data and publishes it on /obj_detect.',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
