@@ -1,113 +1,69 @@
-# Robot Obstacle Detection and Avoidance
+# Obstacle Avoidance for the UGV Rover
 
-## Stage 1 - Object detection: 
-- use LiDAR or OAK-D camera sensors 
-- read incoming info 
-- we make a histogram where each bin is a range of a few degrees 
-- decide if a detected object is an obstacle 
+ROS 2 (Humble) obstacle detection and avoidance for the Waveshare UGV Rover, using either the LD19 LiDAR or the OAK-D Lite depth camera.
 
-## Stage 2 - obstacle avoidance: 
-- if the obstacle is close, turn in a different direction
-
-## Workspace Setup 
-```bash
-colcon build --symlink-install
+```
+/scan  or  /oak/stereo/*  ──►  detector  ──► /obj_detect ──►  avoidance  ──► /cmd_vel
+                                                 /odom, /imu ──┘
 ```
 
-# Parameters
+| Package | Executables | What it does |
+|---|---|---|
+| `object_detection_pkg` | `detector`, `depth_detector` | Turns LiDAR or depth data into a polar histogram (nearest distance per angular bin) and publishes it on `/obj_detect` |
+| `obstacle_avoidance_pkg` | `avoidance` | State machine that follows a straight reference line and drives around obstacles. See [STATE-MACHINE.md](src/obstacle_avoidance_pkg/STATE-MACHINE.md) |
 
-Both `controller` and `depth_controller` accept these ROS parameters (`--ros-args -p name:=value`):
+`/obj_detect` is a `Float32MultiArray` laid out as `[distance, angle, distance, angle, ...]` (metres, radians, `NaN` = no reading in that bin). Bins between two close obstacles are filled in when the gap is narrower than the rover.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `safe_distance` | `1.0` | Distance in metres below which a front obstacle triggers a turn |
-| `fov_deg` | `30.0` | Half-width in degrees of the front window checked for obstacles |
-| `forward_speed` | `0.2` | Forward speed in m/s when the path is clear |
-| `turn_speed` | `0.5` | Turning speed in rad/s when avoiding an obstacle |
-| `turn_choice` | `space` | Side selection: `space` (mean side distance) or `clearance` (closest side bin) |
+## Build
 
-`safe_distance`, `fov_deg`, `forward_speed` and `turn_speed` must be positive.
-
-`controller` (LiDAR) also accepts `angle_offset_deg` (default `90.0`), added to every LiDAR angle so 0° points forward on the real rover (the LiDAR front arrow points to the rover's left). Use `angle_offset_deg:=0.0` if the scan is already aligned (e.g. in Gazebo). Always pass float values (`0.0`, not `0`).
-
-# One-command launch on the real UGV Rover (in the docker container)
-
-`scripts/run_lidar.sh` and `scripts/run_depth.sh` source ROS, the UGV workspace and this workspace, start `ugv_driver` and the sensor if they are not already running, wait until sensor data arrives, then start the controller.
-
-```bash
-ssh -p 23 root@ROVER_IP
-cd ~/robot_vision_obstacle_avoidance
-./scripts/run_lidar.sh safe_distance:=0.5
-./scripts/run_depth.sh safe_distance:=0.5 camera_height:=0.15
-```
-
-Arguments are ROS parameters, given as `name:=value`, `--name value` or `--name=value`. Run with `--help` for the full list.
-
-The rover drives as soon as the controller starts. Ctrl-C stops the controller, publishes a zero velocity, then stops the sensor and driver started by the script (SIGINT, then SIGTERM/SIGKILL only if a node hangs). Nodes that were already running are left untouched. Background node logs are in `/tmp/obstacle_avoidance_logs`. `ROS_DOMAIN_ID` defaults to 18.
-
-# Sensors
-
-## LiDAR
-```bash
-ros2 run object_detection_pkg controller
-```
-
-```bash
-ros2 run object_detection_pkg controller --ros-args -p safe_distance:=0.5
-```
-
-### LiDAR on the real UGV Rover (in the docker container)
-
-Each terminal: `ssh -p 23 root@ROVER_IP`, then:
-```bash
-export ROS_DOMAIN_ID=GROUP_ID
-source /home/ws/ugv_ws/install/setup.bash
-```
-
-```bash
-# T1: motor driver
-ros2 run ugv_bringup ugv_driver
-
-# T2: LiDAR driver (not bringup_lidar.launch.py, it starts a second ugv_driver)
-ros2 launch ldlidar ldlidar.launch.py
-
-# T3: check scan data (~10 Hz)
-ros2 topic hz /scan
-
-# T4: controller
-cd ~/robot_vision_obstacle_avoidance
-source install/setup.bash
-ros2 run object_detection_pkg controller --ros-args -p safe_distance:=0.5
-```
-
-Do not set `use_sim_time:=true` on the real robot. The `_ARRAY_API not found` NumPy traceback at startup can be ignored.
-
-### Visualize the LiDAR scan (on the laptop)
 ```bash
 source /opt/ros/humble/setup.bash
-export ROS_DOMAIN_ID=GROUP_ID
-rviz2 -f base_lidar_link
+colcon build --symlink-install
+source install/setup.bash
 ```
 
-In rviz: Add → By topic → `/scan` → LaserScan, then click Zero in the Views panel. The default `map` fixed frame does not exist on the rover and gives `No tf data`.
+## Run on the rover
 
-## Depth Camera
+Inside the rover's docker container (`ssh -p 23 root@ROVER_IP`):
+
 ```bash
-ros2 run object_detection_pkg depth_controller
+cd ~/robot_vision_obstacle_avoidance
+./scripts/run_avoidance.sh lidar
+./scripts/run_avoidance.sh depth camera_height:=0.12
+./scripts/run_avoidance.sh lidar safe_distance:=0.6   # override any config.yaml value
 ```
 
-```bash
-ros2 run object_detection_pkg depth_controller --ros-args \
-    -p depth_topic:=/SOME_DEPTH_TOPIC \
-    -p camera_info_topic:=/SOME_CAMERA_INFO_TOPIC
-```
+The script starts the driver, sensor, odometry, detector and avoidance node in order and waits for each topic before moving on. Ctrl-C stops the rover and shuts everything down. **The rover drives as soon as the avoidance node starts, so lift it first.**
 
-### Depth Camera in Gazebo (with tunable parameters)
+Step-by-step manual startup, laptop monitoring and checks are in [STARTUP.md](STARTUP.md).
+
+## Parameters
+
+All parameters live in [`config.yaml`](config.yaml) and are loaded with `--ros-args --params-file config.yaml`. The main ones:
+
+| Node | Parameter | Default | Meaning |
+|---|---|---|---|
+| detector | `safe_distance` | 1.0 m | Obstacles within `safe_distance * danger_zone_factor` are grouped into objects |
+| detector | `hist_fov_deg` / `bin_width_deg` | 120 / 5 | Histogram coverage and bin width (coverage must be a multiple of the width) |
+| depth_detector | `camera_height` | 0.10 m | Camera height above the floor, measure it on the rover |
+| avoidance | `safe_distance` | 0.5 m | Something closer than this inside the rover's corridor blocks the front |
+| avoidance | `half_width` | 0.2 m | Half-width of the corridor in front of the rover |
+| avoidance | `v_max` / `v_slow` / `v_turn` | 0.5 / 0.2 / 0.1 m/s | Cruise, detour and turning speed |
+| avoidance | `omega_max` | 0.5 rad/s | Max angular speed |
+
+The full list of avoidance parameters and their defaults is in `obstacle_avoidance_pkg/utils.py`.
+
+The LiDAR angles are rotated by +90° in `lidar_subscribers.py`, because the LD19 front arrow points to the rover's left.
+
+## Gazebo
+
 ```bash
-PYTHONNOUSERSITE=1 ros2 run object_detection_pkg depth_controller --ros-args \
+PYTHONNOUSERSITE=1 ros2 run object_detection_pkg depth_detector --ros-args \
+    --params-file config.yaml \
     -p depth_topic:=/camera/depth/image_raw \
     -p camera_info_topic:=/camera/depth/camera_info \
-    -p use_sim_time:=true \
-    -p safe_distance:=0.8 -p forward_speed:=0.15 -p turn_speed:=0.4 -p fov_deg:=25.0 \
-    -p turn_choice:=space
+    -p use_sim_time:=true
+ros2 run obstacle_avoidance_pkg avoidance --ros-args --params-file config.yaml -p use_sim_time:=true
 ```
+
+Never set `use_sim_time:=true` on the real rover.

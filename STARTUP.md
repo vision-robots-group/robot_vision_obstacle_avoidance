@@ -14,8 +14,8 @@ ssh -p 23 root@ROVER_IP
 cd ~/robot_vision_obstacle_avoidance
 git pull
 
-# the old package has the same name as the new one and breaks colcon build
-touch src/object_detection_pkg_old/COLCON_IGNORE
+# an old checkout may still have the old package, which has the same name and breaks colcon build
+[ -d src/object_detection_pkg_old ] && touch src/object_detection_pkg_old/COLCON_IGNORE
 
 source /opt/ros/humble/setup.bash
 source /home/ws/ugv_ws/install/setup.bash
@@ -69,7 +69,9 @@ Do not use `bringup_lidar.launch.py` for D2: it starts a second `ugv_driver`.
 
 ### Odometry (D3)
 
-The avoidance node needs `/odom`. `ugv_driver` does not publish it. Without `/odom` the avoidance node only publishes zero velocity and the rover never moves.
+The avoidance node needs `/odom` (wheel speed) and `/imu/data_raw` (gyro). `ugv_driver` publishes neither. If either one is missing or older than 0.5 s, the avoidance node only publishes zero velocity and the rover never moves.
+
+At start-up the avoidance node measures the gyro bias for 3 s (`calib_time`). Keep the rover still during that time; it publishes zero velocity until the calibration is done.
 
 The odometry nodes come from the UGV workspace. Check their names on the rover the first time:
 
@@ -82,7 +84,7 @@ grep -rn "odom" /home/ws/ugv_ws/src/*/ugv_bringup/launch/*.py | head
 On the Waveshare workspace this is usually two nodes, each in its own terminal:
 
 ```bash
-# D3a: reads encoders and IMU from the board
+# D3a: reads encoders and IMU from the board, publishes /imu/data_raw
 ros2 run ugv_bringup ugv_bringup
 # D3b: turns odom_raw + imu into /odom
 ros2 run ugv_base_node base_node
@@ -102,7 +104,7 @@ export ROS_DOMAIN_ID=18
 | Terminal | Command | Expected |
 |---|---|---|
 | L1 | `ros2 topic hz /odom` | ~10–20 Hz |
-| L1 | `ros2 topic echo /odom --once --field pose.pose` | `orientation.z` changes when the rover is turned by hand |
+| L1 | `ros2 topic hz /imu/data_raw` | non-zero rate |
 | L2 | `ros2 topic hz /obj_detect` | ~10 Hz |
 | L2 | `ros2 topic echo /obj_detect --once --field data` | `[distance, angle, distance, angle, ...]`, metres and radians |
 | L3 | `ros2 topic echo /cmd_vel` | see [Checks](#4-checks-rover-lifted) |
@@ -123,11 +125,12 @@ If `ros2 topic list` on the laptop shows only `/parameter_events` and `/rosout`,
 
 | Situation | Expected on `/cmd_vel` |
 |---|---|
-| Nothing within `safe_distance` (1.0 m) in front | `linear.x: 0.2`, small `angular.z` |
-| Hand within 1 m in front | `linear.x: 0.0`, `angular.z` non-zero |
+| First 3 s after D5 starts (gyro calibration) | all zero |
+| Nothing in front | `linear.x` between 0.2 and 0.5, small `angular.z` |
+| Hand within 0.5 m (`safe_distance`) straight in front | `linear.x: 0.1` (or 0.0 if both sides are blocked), `angular.z` non-zero |
 | Ctrl-C on D5 | last message all zero, log `Shutting down in state ...` |
 | Ctrl-C on D4 (detector) | all zero within 0.5 s |
-| Ctrl-C on D3 (odometry) | **no stop**: the avoidance node keeps using the last pose. Never stop D3 while D5 runs |
+| Ctrl-C on D3 (odometry) | all zero within 0.5 s |
 
 Only put the rover on the floor once all checks pass.
 
@@ -139,7 +142,7 @@ Only put the rover on the floor once all checks pass.
 ## Troubleshooting
 
 - **`_ARRAY_API not found` NumPy traceback at startup**: harmless, ignore it.
-- **`/cmd_vel` always zero**: check `/odom` (L1) and `/obj_detect` (L2). The avoidance node stops if either one is missing, or if the histogram is older than 0.5 s.
+- **`/cmd_vel` always zero**: check `/odom`, `/imu/data_raw` (L1) and `/obj_detect` (L2). The avoidance node stops if any of them is missing or older than 0.5 s.
 - **Rover does not move although `/cmd_vel` is non-zero**: D1 (`ugv_driver`) is not running, or it runs on another `ROS_DOMAIN_ID`.
 - **Unknown nodes in `ros2 node list`**: another group may be on the same `ROS_DOMAIN_ID`.
 - **Do not set `use_sim_time:=true` on the real rover.**
