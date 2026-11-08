@@ -5,46 +5,15 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 
-from .utils import State, wrap
+from .utils import State, Speaker, wrap, DEFAULTS
 from .histogram_subscriber import ObjectDetectionSubscriber
-
-DEFAULTS = {
-    'odom_topic': '/odom',
-    'imu_topic': '/imu/data_raw',
-    'calib_time': 3.0,
-    'cmd_vel_topic': '/cmd_vel',
-    'safe_distance': 0.5,
-    'half_width': 0.2,
-    'fov_deg': 30.0,
-    'side_start_deg': 10.0,
-    'side_limit_deg': 45.0,
-    'v_max': 0.2,
-    'v_slow': 0.1,
-    'v_turn': 0.0,
-    'omega_max': 0.5,
-    'theta_avoid_deg': 45.0,
-    'theta_tol_deg': 5.0,
-    'e_min': 0.4,
-    'pass_min': 0.5,
-    'clear_ticks': 3,
-    'near_dist': 1.5,
-    'ramp': 1.0,
-    'odom_max_age': 0.5,
-    'k_theta': 1.5,
-    'k_e': 1.0,
-    'rate': 10.0,
-}
 
 class Agent(Node):
     """
     This agent will read the histogram from the topic ``/obj_detect`` and the pose from ``/odom``, and publish on the ``/cmd_vel`` topic.
     It works as a state machine: each state has its own callback that returns the linear and angular velocity.
 
-    At start we save a reference line (``origin`` and ``angle``), which is the path we want to follow.
-    From the pose we always know how far we went along the line (``s``) and how far we are from it (``e``),
-    so we don't need to time the rotations, we just check the odometry.
-
-    Object avoidance case:
+    Object avoidance states:
     - We are going straight on the line (CRUISE)
     - An object is detected in front, we pick the side whose obstacle edge is closer and rotate towards it (TURN_AWAY)
     - We keep going at that angle till the front is clear and we are far enough from the line (SIDESTEP)
@@ -52,12 +21,12 @@ class Agent(Node):
     - We go back to CRUISE, whose line-following terms bring us back on the line
 
     If both sides are blocked we rotate in place till the front is clear (CORNER).
-    If a new object shows up during the avoidance we just start again from TURN_AWAY, the line stays the same.
+    If a new object shows up during avoidance, we just start again from TURN_AWAY.
     """
     def __init__(self, hist_sub: ObjectDetectionSubscriber):
         super().__init__('agent')
         self.hist_sub = hist_sub
-        self.origin = None # (x, y), set on first pose
+        self.origin = None # (x, y)
         self.angle = 0.0
         self.hist = []
         self.pose = None # (x, y, theta)
@@ -73,6 +42,7 @@ class Agent(Node):
         self.sigma = 1
         self.clear_count = 0
         self.s_pass = 0.0
+        self.speaker = Speaker()
 
         self.callback_dict = {
             State.CORNER: self.__corner,
@@ -98,7 +68,7 @@ class Agent(Node):
             if k.endswith('_deg'): setattr(self, k[:-4], math.radians(v)) # convert to radians if in degrees
             else: setattr(self, k, v)
 
-    # ROS I/O ==============================================
+
 
     def __odom_callback(self, msg):
         """
@@ -148,8 +118,9 @@ class Agent(Node):
             self.origin, self.angle = (x, y), th
         s, e = self.__errors(x, y)
         front_blocked = any(self.__in_front(d, a) for d, a in self.hist if abs(a) <= self.fov)
+        prev = self.state
 
-        # new object in front: start the avoidance again, the line stays the same
+        # new object in front: start the avoidance again
         if front_blocked and self.state not in (State.CORNER, State.TURN_AWAY):
             if self.state == State.CRUISE:
                 self.sigma = self.__pick_side(e)
@@ -158,6 +129,9 @@ class Agent(Node):
                 self.state = State.CORNER
 
         v, w = self.callback_dict[self.state](th, s, e, front_blocked)
+        if self.state != prev:
+            self.get_logger().info(f'{prev.name} -> {self.state.name}')
+            self.speaker.say(self.state.name.lower().replace('_', ' '))
         self.publish_cmd(v, max(-self.omega_max, min(self.omega_max, w)))
 
     def __errors(self, x, y):
@@ -208,9 +182,7 @@ class Agent(Node):
         k = max(0.0, min(1.0, (min(front) - self.safe_distance) / self.ramp))
         return v_min + k * (self.v_max - v_min)
 
-    # Callbacks ============================================
-    # Each of them returns a linear and angular velocity based on
-    # the current state and the current position of the robot.
+
 
     def __cruise(self, th, s, e, front_blocked):
         """Cruise: just follow the line."""
@@ -236,10 +208,8 @@ class Agent(Node):
 
     def __drive_by_obstacle(self, th, s, e, front_blocked):
         """Pass: go straight next to the obstacle."""
-        if not self.__side_clear(-self.sigma):
-            self.s_pass = s
-        elif s - self.s_pass >= self.pass_min:
-            self.state = State.CRUISE
+        if not self.__side_clear(-self.sigma): self.s_pass = s
+        elif s - self.s_pass >= self.pass_min: self.state = State.CRUISE
         return self.__speed(self.v_slow), self.__hold(th, self.angle)
 
     def __corner(self, th, s, e, front_blocked):
