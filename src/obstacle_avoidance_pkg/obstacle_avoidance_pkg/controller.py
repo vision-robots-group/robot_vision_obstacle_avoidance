@@ -5,7 +5,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 
-from .utils import State, Speaker, wrap, DEFAULTS
+from .utils import State, wrap, DEFAULTS
 from .histogram_subscriber import ObjectDetectionSubscriber
 
 class Agent(Node):
@@ -42,7 +42,6 @@ class Agent(Node):
         self.sigma = 1
         self.clear_count = 0
         self.s_pass = 0.0
-        self.speaker = Speaker()
 
         self.callback_dict = {
             State.CORNER: self.__corner,
@@ -131,7 +130,6 @@ class Agent(Node):
         v, w = self.callback_dict[self.state](th, s, e, front_blocked)
         if self.state != prev:
             self.get_logger().info(f'{prev.name} -> {self.state.name}')
-            self.speaker.say(self.state.name.lower().replace('_', ' '))
         self.publish_cmd(v, max(-self.omega_max, min(self.omega_max, w)))
 
     def __errors(self, x, y):

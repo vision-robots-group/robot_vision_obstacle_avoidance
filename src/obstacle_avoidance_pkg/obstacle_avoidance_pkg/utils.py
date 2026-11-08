@@ -1,9 +1,5 @@
 from enum import Enum, auto
 import math
-import os
-import shutil
-import signal
-import subprocess
 
 class State(Enum):
     CRUISE = auto()
@@ -14,22 +10,6 @@ class State(Enum):
 
 def wrap(a):
     return math.atan2(math.sin(a), math.cos(a))
-
-class Speaker:
-    """Says short texts with espeak-ng (or espeak) piped to aplay, without blocking. ``SPEECH=0`` disables it."""
-    def __init__(self):
-        enabled = os.environ.get('SPEECH', '1') != '0'
-        self.cmd = (shutil.which('espeak-ng') or shutil.which('espeak')) if enabled else None
-        self.device = os.environ.get('AUDIO_DEVICE', 'default')
-        self.proc = None
-
-    def say(self, text):
-        if self.cmd is None: return
-        if self.proc is not None and self.proc.poll() is None:
-            try: os.killpg(self.proc.pid, signal.SIGTERM)
-            except ProcessLookupError: pass
-        self.proc = subprocess.Popen(['sh', '-c', '"$0" --stdout "$1" | aplay -q -D "$2"', self.cmd, text, self.device],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 DEFAULTS = {
     'odom_topic': '/odom',
