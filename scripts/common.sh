@@ -31,7 +31,7 @@ Examples:
 Main parameters (see config.yaml for all of them):
   safe_distance  (1.0)    fov_deg        (30.0)
   v_max          (0.2)    v_slow         (0.1)
-  omega_max      (0.5)    turn_choice    (safe | clearance)
+  omega_max      (0.5)    near_dist      (1.5)
 $EXTRA_USAGE
 Environment:
   ROS_DOMAIN_ID   (default 18, current: $ROS_DOMAIN_ID)
@@ -39,6 +39,8 @@ Environment:
   SENSOR_TIMEOUT  seconds to wait for sensor data (default 30)
   STOP_TIMEOUT    seconds to wait for each node to stop on Ctrl-C (default 10)
   LOG_DIR         background node logs (default /tmp/obstacle_avoidance_logs)
+  SPEECH          0 disables the spoken state changes (default 1)
+  AUDIO_DEVICE    ALSA device for speech (default: first USB card, else default)
 
 Ctrl-C stops the controller (zero velocity), then the sensor and driver started by this script.
 EOF
@@ -170,7 +172,41 @@ start_odometry() {
     start_bg base_node "ugv_base_node/base_node" ros2 run ugv_base_node base_node
 }
 
+setup_speech() {
+    if [[ "${SPEECH:-1}" == 0 ]]; then
+        log "speech disabled (SPEECH=0)"
+        return
+    fi
+    if ! command -v espeak-ng >/dev/null && ! command -v espeak >/dev/null || ! command -v aplay >/dev/null; then
+        log "installing espeak-ng and alsa-utils"
+        local sudo=""
+        [[ $EUID -ne 0 ]] && sudo="sudo -n"
+        if ! { $sudo apt-get update -qq && DEBIAN_FRONTEND=noninteractive $sudo apt-get install -y -qq espeak-ng alsa-utils; } >/dev/null 2>&1; then
+            log "WARNING: cannot install espeak-ng / alsa-utils, running without speech"
+            return
+        fi
+    fi
+    if [[ ! -d /dev/snd ]]; then
+        log "WARNING: no /dev/snd in the container (start it with --device /dev/snd or --privileged), running without speech"
+        return
+    fi
+    if [[ -z "${AUDIO_DEVICE:-}" ]]; then
+        local card
+        card=$(aplay -l 2>/dev/null | awk '/^card [0-9]+:/ && tolower($0) ~ /usb/ {sub(":", "", $2); print $2; exit}')
+        AUDIO_DEVICE="${card:+plughw:$card,0}"
+    fi
+    export AUDIO_DEVICE="${AUDIO_DEVICE:-default}"
+    local tts
+    tts=$(command -v espeak-ng || command -v espeak)
+    if timeout 5 bash -c '"$0" --stdout "speech ready" | aplay -q -D "$1"' "$tts" "$AUDIO_DEVICE" 2>"$LOG_DIR/speech.log"; then
+        log "speech on $AUDIO_DEVICE"
+    else
+        log "WARNING: speech test failed on $AUDIO_DEVICE, see $LOG_DIR/speech.log (set AUDIO_DEVICE, list cards with aplay -l)"
+    fi
+}
+
 run_avoidance() {
+    setup_speech
     log "LIFT THE ROVER OR CLEAR THE FLOOR: it drives as soon as the avoidance starts"
     log "running: ros2 run obstacle_avoidance_pkg avoidance $*"
     log "press Ctrl-C to stop the rover and shut everything down"
